@@ -364,3 +364,6 @@ rmse_df %>%
 
 My proposed model has lower prediction error (minimized RMSE) compared to the other two models provided. The second model, which looks only at baby length and gestational age, performs the worst, while the interactions model is somewhere in the middle. I would select my model for prediction purposes, but may want to further explore whether we achieve the constant variance assumption based on the residuals vs. fitted values graph already provided. Ultimately, if we violate this assumption, I might go with the interactions model -- assuming it has better dispersion of residuals across fitted values.
 
+## Problem 2
+
+
