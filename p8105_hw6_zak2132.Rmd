@@ -1,0 +1,95 @@
+---
+title: "P8105 Homework #6"
+author: 'Zachary Katz (UNI: zak2132)'
+date: "12/4/2021"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load packages
+library(tidyverse)
+library(viridis)
+library(readxl)
+library(readr)
+library(modelr)
+library(purrr)
+library(patchwork)
+library(mgcv)
+
+# Set global options for embedding plots and choosing themes
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## Problem 1
+
+```{r}
+# Load and clean the data
+baby_df = 
+  # Load in the data and clean column names to be more descriptive
+  read_csv("./data/birthweight.csv") %>% 
+  janitor::clean_names() %>% 
+  rename(
+    momwt = delwt,
+    momrace = mrace,
+    dadrace = frace,
+    average_smokes = smoken,
+    momheight = mheight
+  ) %>% 
+  # Recode categoricals as factor variables with descriptive levels
+  mutate(
+    dadrace = 
+      case_when(
+        dadrace == 1 ~ "White",
+        dadrace == 2 ~ "Black",
+        dadrace == 3 ~ "Asian",
+        dadrace == 4 ~ "Puerto Rican",
+        dadrace == 8 ~ "Other",
+        dadrace == 9 ~ "Unknown",
+        TRUE ~ ""
+      ) %>% as.factor(),
+    momrace = 
+      case_when(
+        momrace == 1 ~ "White",
+        momrace == 2 ~ "Black",
+        momrace == 3 ~ "Asian",
+        momrace == 4 ~ "Puerto Rican",
+        momrace == 8 ~ "Other",
+        TRUE ~ ""
+      ) %>% as.factor(),
+    malform =
+      case_when(
+        malform == 0 ~ "Absent",
+        malform == 1 ~ "Present"
+      ) %>% as.factor(),
+    babysex = 
+      ifelse(
+        babysex == 1, "Male", "Female"
+        ) %>% as.factor(),
+    # Convert units for consistency (to grams and centimeters)
+    momwt_grams = momwt * 453.592,
+    momheight_cm = momheight * 2.54) %>% 
+  # Rename columns with units where applicable and remove no longer necessary variables
+  rename(
+    bwt_grams = bwt,
+    wtgain_grams = wtgain,
+  ) %>% 
+  select(-momheight, -momwt)
+
+# Check data frame
+baby_df %>% 
+  head(10) %>% 
+  knitr::kable()
+```
+
