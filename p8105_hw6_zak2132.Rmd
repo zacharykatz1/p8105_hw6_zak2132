@@ -267,4 +267,100 @@ baby_df %>%
   )
 ```
 
+We note that there are a couple of babies with predicted birthweight less than 0, but recognize that they are outliers. Most residuals appear roughly evenly dispersed across predicted (fitted) values, meaning that except for the lower end of our fitted values, we tend to see constant variance. However, the fact that residuals are not scattered around 0 on the low end of our fitted values indicates there may be some violation of the assumption of constant variance.
+
+#### Model Comparisons
+
+We need to compare our model to two others:
+
+* A model that uses length at birth and gestational age as predictors (main effects only)
+* A model that uses head circumference, length, sex, and all interactions (including the three-way interaction) between these
+
+```{r}
+# Develop model using length at birth and gestational age
+baby_df %>% 
+  lm(bwt_grams ~ blength + gaweeks, data = .) %>% 
+  broom::tidy() %>% 
+  knitr::kable(
+    digits = 2
+  )
+
+# Develop model using head circumference, length, sex, and interactions
+baby_df %>% 
+  lm(bwt_grams ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = .) %>% 
+  broom::tidy() %>% 
+  knitr::kable(
+    digits = 2
+  )
+```
+
+Now, we can compare our models using cross-validated prediction error:
+
+```{r}
+# Create cross-validation datasets
+# Split original sample into 80% training, 20% testing, with 100 resamples
+cv_df = 
+  crossv_mc(baby_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+
+# Fit each of the three models on training data
+# Then, compute RMSE on testing data
+cv_df = 
+  cv_df %>% 
+  mutate(
+    my_model = map(.x = train, ~lm(bwt_grams ~ babysex + bhead + blength + gaweeks + momheight_cm + momrace + avg_daily_cigs + wtgain_grams, data = .x)),
+    model2 = map(.x = train, ~lm(bwt_grams ~ blength + gaweeks, data = .x)),
+    model3 = map(.x = train, ~lm(bwt_grams ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = .x))
+  ) %>% 
+  mutate(
+    rmse_my_model = map2_dbl(.x = my_model,.y = test, ~rmse(model = .x, data = .y)),
+    rmse_model2 = map2_dbl(.x = model2,.y = test, ~rmse(model = .x, data = .y)),
+    rmse_model3 = map2_dbl(.x = model3,.y = test, ~rmse(model = .x, data = .y))
+  )
+
+# Data frame with RMSEs across models
+rmse_df = cv_df %>% 
+  select(rmse_my_model, rmse_model2, rmse_model3) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "RMSE",
+    names_prefix = "rmse_"
+  )
+
+# Print table of summary mean RMSE across models
+rmse_df %>% 
+  group_by(model) %>% 
+  summarize(
+    mean_RMSE = mean(RMSE)
+  ) %>% 
+  knitr::kable()
+```
+
+From the table, we observe that my model has the lowest mean RMSE across cross-validation trials. Let's plot for comparison of RMSE distributions:
+
+```{r}
+# Violin plot of RMSE distribution for each model
+rmse_df %>% 
+  mutate(
+    # Maintain original model order
+    model = fct_inorder(model)
+  ) %>% 
+  ggplot(aes(x = model, y = RMSE, fill = model)) + 
+  geom_violin(alpha = 0.3) + 
+  labs(
+    title = "Comparing Prediction Error Across Models",
+    x = "Model",
+    y = "RMSE"
+  ) + 
+  scale_x_discrete(
+    labels = c("My Model", "Length & Gestational Age", "Interactions Model")
+  ) + 
+  theme(legend.position = "none")
+```
+
+My proposed model has lower prediction error (minimized RMSE) compared to the other two models provided. The second model, which looks only at baby length and gestational age, performs the worst, while the interactions model is somewhere in the middle. I would select my model for prediction purposes, but may want to further explore whether we achieve the constant variance assumption based on the residuals vs. fitted values graph already provided. Ultimately, if we violate this assumption, I might go with the interactions model -- assuming it has better dispersion of residuals across fitted values.
 
