@@ -366,4 +366,150 @@ My proposed model has lower prediction error (minimized RMSE) compared to the ot
 
 ## Problem 2
 
+```{r}
+# Load the data
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
 
+weather_df
+```
+
+#### Bootstrapping
+
+Developing a simple linear regression with `tmax` as the response and `tmin` as the predictor, we're interested in the distribution of the estimated r-squared and log(beta_0*beta_1). First, let's bootstrap 5000 times:
+
+```{r}
+# Bootstrap 5000 times
+bootstrap_df = 
+  weather_df %>% 
+  bootstrap(n = 5000, id = "strap_num") %>% 
+  # Convert resample objects to df and clean up bootstrap results
+  mutate(
+    strap = map(strap, as_tibble),
+    models = map(strap, ~lm(tmax ~ tmin, data = .x)),
+    estimates = map(models, broom::tidy),
+    summary = map(models, broom::glance)
+  ) %>% 
+  select(-strap, -models) %>% 
+  unnest(summary)
+
+# Bootstrap 5000 times
+bootstrap_df = 
+  weather_df %>% 
+  bootstrap(n = 5000, id = "strap_num") %>% 
+  # Convert resample objects to df and clean up bootstrap results
+  mutate(
+    strap = map(strap, as_tibble),
+    models = map(strap, ~lm(tmax ~ tmin, data = .x)),
+    estimates = map(models, broom::tidy),
+    summary = map(models, broom::glance)
+  ) %>% 
+  select(-strap, -models) %>% 
+  unnest(c(estimates, summary), names_repair = "universal") %>% 
+  select(strap_num, term, estimate, r.squared) %>% 
+  pivot_wider(
+    id_cols = c(strap_num, r.squared),
+    names_from = term,
+    values_from = estimate
+  ) %>% 
+  rename(
+    beta0 = `(Intercept)`, 
+    beta1 = "tmin"
+  ) %>% 
+  mutate(
+    logb0_b1 = log(beta0 * beta1)
+  ) %>% 
+  select(-beta0, -beta1)
+
+# Check head of bootstrap df
+bootstrap_df %>% 
+  head(10) %>% 
+  knitr::kable(
+    digits = 2
+  )
+```
+
+#### R-squared
+
+Now we can extract the 95% confidence interval for the estimated r-squared when we perform a simple linear regression `tmax ~ tmin`.
+
+```{r}
+# Find 95% confidence interval for R-squared
+r_squared = bootstrap_df %>% 
+  select(r.squared) %>% 
+  summarize(
+    lower_ci = quantile(r.squared, 0.025),
+    upper_ci = quantile(r.squared, 0.975)
+  )
+
+# Print table of 95% CI
+r_squared %>%
+  knitr::kable(
+    digits = 3
+  )
+```
+
+Our 95% confidence interval ranges from 0.894 to 0.927. And we can also plot the distribution of our estimated r-squared as follows:
+
+```{r}
+# Plot distribution of r-squared after bootstrapping
+bootstrap_df %>% 
+  select(r.squared) %>% 
+  ggplot(aes(x = r.squared)) + 
+  geom_density() + 
+  labs(
+    title = "Distribution of Estimated R-Squared",
+    subtitle = "Bootstrapping 5000 times",
+    x = "Estimated R Squared",
+    y = "Density"
+  )
+```
+
+We find from this graph that the R-squared values from bootstrapping appear normally distributed with mean `r round(mean(pull(bootstrap_df, r.squared)), 3)` and SD `r round(sd(pull(bootstrap_df, r.squared)), 3)`.
+
+#### log(B_0 * B_1)
+
+Similarly, we can extract the 95% confidence interval for the estimated log(beta_0 * beta_1) when we perform a simple linear regression `tmax ~ tmin`.
+
+```{r}
+# Find 95% confidence interval for log(beta0*beta1)
+log_b0_b1 = bootstrap_df %>% 
+  select(logb0_b1) %>% 
+  summarize(
+    lower_ci = quantile(logb0_b1, 0.025),
+    upper_ci = quantile(logb0_b1, 0.975)
+  )
+
+# Print table of 95% CI
+log_b0_b1 %>%
+  knitr::kable(
+    digits = 3
+  )
+```
+
+And also can plot its distribution across the 5000 bootstraps:
+
+```{r}
+# Plot distribution of log(b0b1) after bootstrapping
+bootstrap_df %>% 
+  select(logb0_b1) %>% 
+  ggplot(aes(x = logb0_b1)) + 
+  geom_density() + 
+  labs(
+    title = "Distribution of Estimated log(beta0*beta1)",
+    subtitle = "Bootstrapping 5000 times",
+    x = "Estimated log(beta0*beta1)",
+    y = "Density"
+  )
+```
+
+Our 95% confidence interval ranges from 1.965 to 2.060. Again, it appears our estimated log(b0 * b1) is normally distributed with mean `r round(mean(pull(bootstrap_df, logb0_b1)), 3)` and SD `r round(sd(pull(bootstrap_df, logb0_b1)), 3)`.
