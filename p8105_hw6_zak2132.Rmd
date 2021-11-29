@@ -13,9 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(viridis)
 library(readxl)
-library(readr)
 library(modelr)
-library(purrr)
 library(patchwork)
 library(mgcv)
 library(leaps)
@@ -37,7 +35,7 @@ scale_fill_discrete = scale_fill_viridis_d
 
 ## Problem 1
 
-```{r}
+```{r message = FALSE, warning = FALSE}
 # Load and clean the data
 baby_df = 
   # Load in the data and clean column names to be more descriptive
@@ -102,7 +100,7 @@ After loading the data, the following steps were taken to clean and tidy the tib
 * Renaming variables to be more accurate and descriptive
 * Converting relevant variables to factors with appropriate levels
 * Ensuring consistency of units (grams and centimeters rather than pounds and inches for weight and height, respectively)
-* Checking for missingness; all variables havea 100% completeness rate
+* Checking for missingness; all variables have a 100% completeness rate
 
 ``` {r}
 # Explore head of data frame
@@ -135,11 +133,12 @@ baby_df %>%
   )
 ```
 
-Birthweight appears roughly normally distributed, with mean of `r mean(pull(baby_df, bwt_grams))` grams and SD of `r sd(pull(baby_df, bwt_grams))`.
+Birthweight appears roughly normally distributed, with mean of `r round(mean(pull(baby_df, bwt_grams)), 2)` grams and SD of `r round(sd(pull(baby_df, bwt_grams)), 2)`.
 
-Although unsure yet which continuous predictors we'll use, we can choose a couple of potential ones to check the linearity assumption for fun as well:
+Although still unsure which continuous predictors we'll use, we can choose a couple of potential ones to check the linearity assumption for fun as well:
 
 ```{r}
+# Check distribution of baby weight vs mom weight
 bwt_vs_momwt = 
   baby_df %>% 
   ggplot(aes(x = bwt_grams, y = momwt_grams)) + 
@@ -151,6 +150,7 @@ bwt_vs_momwt =
     y = "Mom's Weight (g)"
   )
 
+# Check distribution of baby weight vs mom height
 bwt_vs_momht = 
   baby_df %>% 
   ggplot(aes(x = bwt_grams, y = momheight_cm)) + 
@@ -162,14 +162,14 @@ bwt_vs_momht =
     y = "Mom's Height (cm)"
   )
 
-bwt_vs_momwt + bwt_vs_momht
+bwt_vs_momwt / bwt_vs_momht
 ```
 
-We find a bend in the curve for both graphs at around baby's weight of 2500 grams. That said, we can proceed for now with linear regression assuming we meet the linearity assumption, but may want to be cautious going forward after this finding.
+We find a bend in the curve for both graphs at around baby's weight of 3000 grams. That said, we can proceed for now with linear regression assuming we meet the linearity assumption, but may want to be cautious going forward after this finding.
 
-One way to approach model development is to hypothesize relevant covariates a priori, and then use the "best subset" procedure to select the ideal subset of covariates from our hypothesized superset based on the maximization of adjusted R-squared and minimization of BIC and Cp. 
+One way to approach model development is to hypothesize relevant covariates *a priori*, and then use the "best subset" procedure to select the ideal subset of covariates from our hypothesized superset based on the maximization of adjusted R-squared and minimization of BIC and Cp. 
 
-Let's begin by fitting a preliminary model using covariates we believe best predict birth weight. First, we exclude variables due to low cell counts or fewer than two levels, including `malform`, `pnumlbw`, and `pnumgsa`. Then, we can explore the literature on low birth weight, where we find some known associations with birth weight; for example, smoking is known to be associated with lower birth weight. Prior findings of significant association with birthweight include parental race, baby's sex, baby's head circumference and length at birth, gestational age, maternal height and age, and mother's weight gain during pregnancy. We develop our preliminary model as follows
+Let's begin by fitting a preliminary model using covariates we believe best predict birth weight. First, we exclude variables due to low cell counts or factorization with fewer than two levels, including `malform`, `pnumlbw`, and `pnumgsa`. Then, we can explore the literature on low birth weight, where we find some known associations with birth weight; for example, smoking is known to be associated with lower birth weight. Prior findings of significant association with birthweight include parental race, baby's sex, baby's head circumference and length at birth, gestational age, maternal height and age, and mother's weight gain during pregnancy. We develop our preliminary model as follows
 
 ```{r}
 # Proposed preliminary linear model
@@ -190,7 +190,7 @@ summary(prelim_model) %>%
   knitr::kable()
 ```
 
-A quick first glance at the data tells us that some promising covariates of the ones included in our preliminary model are `babysex`, `babyhead`, `babylength`, `gaweeks`, `momheight_cm`, `avg_daily_cigs`, and `wtgain_grams`, which all have p-values under 0.05.
+A quick first glance at the data tells us that some promising covariates of the ones included in our preliminary model are `babysex`, `bhead`, `blength`, `gaweeks`, `momheight_cm`, `avg_daily_cigs`, and `wtgain_grams`, which all have p-values under 0.05.
 
 With this initial model, we can use the "best subset" method to determine the ideal set of covariates to include in a more final model.
 
@@ -220,7 +220,8 @@ stats_summary_subsets = data.frame(
 subset_models =
   as.data.frame(best_subset_summary$outmat) %>% 
   cbind(stats_summary_subsets) %>% 
-  arrange(desc(adjusted_r2), cp, bic)
+  arrange(desc(adjusted_r2), cp, bic) %>% 
+  select(adjusted_r2, cp, bic, everything())
 
 # Print summary overview of best subsets
 subset_models %>% 
@@ -229,7 +230,7 @@ subset_models %>%
   )
 ```
 
-We select the best model of the subsets by maximizing adjusted R2 and minimizing prediction error (cp and BIC in this case). The model that best achieves these goals incorporates `babysex`, `bhead`, `blength`, `gaweeks`, `momheight_cm`, `momrace`, `avg_daily_cigs`, and `wtgain_grams`. This means we exclude `dadrace` and `momage` from our final model.
+We select the best model of the subsets by maximizing adjusted R2 and minimizing prediction error (Cp and BIC in this case). The model that best achieves these goals incorporates `babysex`, `bhead`, `blength`, `gaweeks`, `momheight_cm`, `momrace`, `avg_daily_cigs`, and `wtgain_grams`. This means we exclude `dadrace` and `momage` from our final model.
 
 We run our final model as follows, and then show a plot of model residuals against fitted values:
 
@@ -366,7 +367,7 @@ My proposed model has lower prediction error (minimized RMSE) compared to the ot
 
 ## Problem 2
 
-```{r}
+```{r message = FALSE, warning = FALSE}
 # Load the data
 weather_df = 
   rnoaa::meteo_pull_monitors(
@@ -380,14 +381,17 @@ weather_df =
     tmax = tmax / 10) %>%
   select(name, id, everything())
 
-weather_df
+# Check first 10 observations
+weather_df %>% 
+  head(10) %>% 
+  knitr::kable()
 ```
 
 #### Bootstrapping
 
-Developing a simple linear regression with `tmax` as the response and `tmin` as the predictor, we're interested in the distribution of the estimated r-squared and log(beta_0*beta_1). First, let's bootstrap 5000 times:
+Developing a simple linear regression with `tmax` as the response and `tmin` as the predictor, we're interested in the distribution of the estimated r-squared and log($\beta_{0}*\beta_{1}$). First, let's bootstrap 5000 times:
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 # Bootstrap 5000 times
 bootstrap_df = 
   weather_df %>% 
@@ -476,9 +480,9 @@ bootstrap_df %>%
 
 We find from this graph that the R-squared values from bootstrapping appear normally distributed with mean `r round(mean(pull(bootstrap_df, r.squared)), 3)` and SD `r round(sd(pull(bootstrap_df, r.squared)), 3)`.
 
-#### log(B_0 * B_1)
+#### log($\beta_{0} * \beta_{1}$)
 
-Similarly, we can extract the 95% confidence interval for the estimated log(beta_0 * beta_1) when we perform a simple linear regression `tmax ~ tmin`.
+Similarly, we can extract the 95% confidence interval for the estimated log($\beta_{0} * \beta_{1}$) when we perform a simple linear regression `tmax ~ tmin`.
 
 ```{r}
 # Find 95% confidence interval for log(beta0*beta1)
@@ -512,4 +516,4 @@ bootstrap_df %>%
   )
 ```
 
-Our 95% confidence interval ranges from 1.965 to 2.060. Again, it appears our estimated log(b0 * b1) is normally distributed with mean `r round(mean(pull(bootstrap_df, logb0_b1)), 3)` and SD `r round(sd(pull(bootstrap_df, logb0_b1)), 3)`.
+Our 95% confidence interval ranges from 1.965 to 2.060. Again, it appears our estimated log($\beta_{0} * \beta_{1}$) is roughly normally distributed with mean `r round(mean(pull(bootstrap_df, logb0_b1)), 3)` and SD `r round(sd(pull(bootstrap_df, logb0_b1)), 3)`.
